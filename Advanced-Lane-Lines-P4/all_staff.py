@@ -74,7 +74,7 @@ def undistort_img(img, objpoints, imgpoints):
     dst = cv2.undistort(img, mtx, dist, None, mtx)
     return dst
 
-def binary_color(img, sobel_kernel=3, gray_threshold=(50,200), color_thresold=(130,200)):
+def binary_color(img, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(110,255)):
 
     def grad(one_chanel):
         sobely = cv2.Sobel(one_chanel, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
@@ -102,15 +102,15 @@ def binary_color(img, sobel_kernel=3, gray_threshold=(50,200), color_thresold=(1
 
     binary = np.zeros_like(gray)
     binary[(gray_binary == 1) | (S_binary == 1) ] = 1
-    return gray_binary
+    return binary
 
 def warp(img):
     img_size = (img.shape[1], img.shape[0])
     src = np.float32(
         [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-         [((img_size[0] / 6) - 10), img_size[1]],
+         [((img_size[0] / 6) +40), img_size[1]],
          [(img_size[0] * 5 / 6) + 60, img_size[1]],
-         [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
+         [(img_size[0] / 2 + 70), img_size[1] / 2 + 100]])
     dst = np.float32(
         [[(img_size[0] / 4), 0],
          [(img_size[0] / 4), img_size[1]],
@@ -142,8 +142,43 @@ def warp(img):
 # img_read_show(img, binary_color(img), gray=True)
 
 ## For PerspectiveTransform test
-img = Image.imread(test_image)
-o, i = r_obj_img_point(chessboard_dir)
-img = undistort_img(img, o, i)
-img_read_show(img, warp(img)[0], False)
+# img = Image.imread(test_image)
+# o, i = r_obj_img_point(chessboard_dir)
+# img = undistort_img(img, o, i)
+# img_read_show(img, warp(img)[0], False)
 
+## For step 1 ~ 3
+# img = Image.imread(test_image)
+#
+# o, i = r_obj_img_point(chessboard_dir)
+# img = undistort_img(img, o, i)
+#
+# binary_img = binary_color(img)
+#
+# img_perspective_transform = warp(binary_img)[0]
+# img_read_show(img, img_perspective_transform, True)
+
+## Saving the perspective transform image
+# img = Image.imread(test_image)
+#
+# o, i = r_obj_img_point(chessboard_dir)
+# img = undistort_img(img, o, i)
+#
+# binary_img = binary_color(img)
+#
+# img_perspective_transform = warp(binary_img)[0]
+#
+# plt.imsave('img_perspective_transform.jpg',img_perspective_transform, cmap=plt.cm.gray)
+
+
+## For the slide windows
+binary_warped = Image.imread('output_images/img_perspective_transform.jpg')[:, :, 0] # shape(720, 1280, 4) -> (720, 1280)
+histogram = np.sum(binary_warped[binary_warped.shape[0]//2:, :], axis=0) # cut the sky
+
+out_img = np.dstack([binary_warped, binary_warped, binary_warped])*2
+
+print (out_img.dtype)
+print (np.sum(binary_warped))
+print (np.sum(out_img))
+plt.imshow(out_img)
+plt.show()

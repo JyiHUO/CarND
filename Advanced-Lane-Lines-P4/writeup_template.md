@@ -56,7 +56,7 @@ I used a combination of color and gradient thresholds to generate a binary image
 
 - In order to extract the yellow lane line, I only using `S` channel with threshold (130,200)
 
-![S_channel](output_images/Figure_2.png)
+![S_channel](output_images/figure_5.png)
 
 - And then I campute the gradient magnitude for gray image with threshold (50,200) and ksize 3
 
@@ -96,7 +96,17 @@ I verified that my perspective transform was working as expected by drawing the 
 
 ![warp](output_images/Figure_4.png)
 
-#### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
+After doing the wrap the binary image. It looks like they are almost parallel.:
+
+![warp](output_images/figure_6.png)
+
+
+
+#### 4. Fit the line to calculate curvature
+
+Firstly, I cut the sky and plot histogram for perspective transform image:
+
+![histogram](output_images/histogram.png)
 
 Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
 
