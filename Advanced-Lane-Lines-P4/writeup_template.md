@@ -110,7 +110,9 @@ Firstly, I cut the sky and plot histogram for perspective transform image:
 
 Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
 
-![alt text][image5]
+![find_line](output_images/find_line.png)
+
+The result is amazing good.
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 

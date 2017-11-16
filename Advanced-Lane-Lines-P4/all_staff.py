@@ -175,10 +175,82 @@ def warp(img):
 binary_warped = Image.imread('output_images/img_perspective_transform.jpg')[:, :, 0] # shape(720, 1280, 4) -> (720, 1280)
 histogram = np.sum(binary_warped[binary_warped.shape[0]//2:, :], axis=0) # cut the sky
 
-out_img = np.dstack([binary_warped, binary_warped, binary_warped])*2
+out_img = np.dstack([binary_warped, binary_warped, binary_warped])*255
 
-print (out_img.dtype)
-print (np.sum(binary_warped))
-print (np.sum(out_img))
+midpoint = np.int(histogram.shape[0]/2)
+leftx_base = np.argmax(histogram[:midpoint])
+rightx_base = np.argmax(histogram[midpoint:])+midpoint
+
+nwindows = 9
+
+window_height = np.int(binary_warped.shape[0]/nwindows)
+
+nonzero = binary_warped.nonzero()
+nonzero_row = nonzero[0]
+nonzero_col = nonzero[1]
+
+leftx_current = leftx_base
+rightx_current = rightx_base
+
+margin = 100
+
+minpix = 50
+
+left_lane_inds = []
+right_lane_inds = []
+
+for window in range(nwindows):
+    win_y_low = binary_warped.shape[0] - (window+1) * window_height
+    win_y_high = binary_warped.shape[0] - window*window_height
+
+    win_xleft_left = leftx_current - margin
+    win_xleft_right = leftx_current + margin
+
+    win_xright_left = rightx_current - margin
+    win_xright_right = rightx_current + margin
+
+    cv2.rectangle(out_img, (win_xleft_left, win_y_low), (win_xleft_right,win_y_high), (0,0,255), 2)
+    cv2.rectangle(out_img, (win_xright_left, win_y_low), (win_xright_right, win_y_high), (0,0,255),2)
+
+    good_left_ids = ((nonzero_row >= win_y_low)&(nonzero_row <= win_y_high) &\
+                     (nonzero_col>=win_xleft_left) & (nonzero_col<=win_xleft_right)).nonzero()[0]
+
+    good_right_ids = ((nonzero_row>=win_y_low)&(nonzero_row>=win_y_high) &\
+                      (nonzero_col>=win_xright_left) & (nonzero_col<=win_xright_right)).nonzero()[0]
+
+    left_lane_inds.append(good_left_ids)
+    right_lane_inds.append(good_right_ids)
+
+    if len(good_left_ids) > minpix:
+        leftx_current = np.int(np.mean(nonzero_col[good_left_ids]))
+    if len(good_right_ids) > minpix:
+        rightx_current = np.int(np.mean(nonzero_col[good_right_ids]))
+
+# concatenate the arrays
+left_lane_inds = np.concatenate(left_lane_inds)
+right_lane_inds = np.concatenate(right_lane_inds)
+
+leftx = nonzero_col[left_lane_inds]
+lefty = nonzero_row[left_lane_inds]
+rightx = nonzero_col[right_lane_inds]
+righty = nonzero_row[right_lane_inds]
+
+# Fit the line according to y
+left_fit = np.polyfit(lefty, leftx, 2)
+right_fit = np.polyfit(righty, rightx, 2)
+
+## Visualization
+ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0])
+left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+out_img[nonzero_row[left_lane_inds], nonzero_col[left_lane_inds]] = [255,0,0]
+out_img[nonzero_row[right_lane_inds], nonzero_col[right_lane_inds]] = [0,255,0]
+
 plt.imshow(out_img)
+plt.plot(left_fitx, ploty, color='yellow')
+plt.plot(right_fitx, ploty, color='yellow')
 plt.show()
+
+# plt.imshow(out_img)
+# plt.show()
