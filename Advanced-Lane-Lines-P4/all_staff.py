@@ -10,9 +10,12 @@ import glob
 import matplotlib.pyplot as plt
 import matplotlib.image as Image
 import time
+import pickle
+import os
 
 chessboard_dir = 'camera_cal/calibration*.jpg'
 test_image = 'test_images/test4.jpg' # should read in RGB
+obj_img_dir = 'obj_img_point.pkl'
 
 # utils
 def img_read_show(img_o, img_c, gray=False):
@@ -75,7 +78,13 @@ def undistort_img(img, objpoints, imgpoints):
     return dst
 
 def binary_color(img, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(110,255)):
-
+    '''
+    :param img: from undistort_img
+    :param sobel_kernel:
+    :param gray_threshold:
+    :param color_thresold:
+    :return: gray image to warpped
+    '''
     def grad(one_chanel):
         sobely = cv2.Sobel(one_chanel, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
         sobelx = cv2.Sobel(one_chanel, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
@@ -104,7 +113,11 @@ def binary_color(img, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(1
     binary[(gray_binary == 1) | (S_binary == 1) ] = 1
     return binary
 
-def warp(img):
+def warp_M(img):
+    '''
+    :param img: can be binary image returen for colour and gradient threshold
+    :return: binary warped
+    '''
     img_size = (img.shape[1], img.shape[0])
     src = np.float32(
         [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
@@ -119,9 +132,143 @@ def warp(img):
     # print(img.shape)
     # print(src)
     # print(dst)
+
+    Minv = cv2.getPerspectiveTransform(dst, src)
+
     M = cv2.getPerspectiveTransform(src, dst)
     wrapper = cv2.warpPerspective(img, M, img_size)
-    return wrapper, M
+    return wrapper, Minv
+
+
+def slide_windows(binary_warped, nwindows=9, margin=100, minpix=50):
+    '''
+    :param binary_warped: from perspective transform
+    :param nwindows: num of slide wins
+    :param margin: size of wins
+    :param minpix: pixel in windows to run
+    :return: left, right and y position to draw
+    '''
+    histogram = np.sum(binary_warped[binary_warped.shape[0] // 2:, :], axis=0)  # cut the sky
+    midpoint = np.int(histogram.shape[0] / 2)
+    leftx_base = np.argmax(histogram[:midpoint])
+    rightx_base = np.argmax(histogram[midpoint:]) + midpoint
+
+    window_height = np.int(binary_warped.shape[0] / nwindows)
+
+    nonzero = binary_warped.nonzero()
+    nonzero_row = nonzero[0]
+    nonzero_col = nonzero[1]
+
+    leftx_current = leftx_base
+    rightx_current = rightx_base
+
+    left_lane_inds = []
+    right_lane_inds = []
+
+    for window in range(nwindows):
+        win_y_low = binary_warped.shape[0] - (window + 1) * window_height
+        win_y_high = binary_warped.shape[0] - window * window_height
+
+        win_xleft_left = leftx_current - margin
+        win_xleft_right = leftx_current + margin
+
+        win_xright_left = rightx_current - margin
+        win_xright_right = rightx_current + margin
+
+        # cv2.rectangle(out_img, (win_xleft_left, win_y_low), (win_xleft_right, win_y_high), (0, 0, 255), 2)
+        # cv2.rectangle(out_img, (win_xright_left, win_y_low), (win_xright_right, win_y_high), (0, 0, 255), 2)
+
+        good_left_ids = ((nonzero_row >= win_y_low) & (nonzero_row <= win_y_high) &\
+                         (nonzero_col >= win_xleft_left) & (nonzero_col <= win_xleft_right)).nonzero()[0]
+
+        good_right_ids = ((nonzero_row >= win_y_low) & (nonzero_row >= win_y_high) &\
+                          (nonzero_col >= win_xright_left) & (nonzero_col <= win_xright_right)).nonzero()[0]
+
+        left_lane_inds.append(good_left_ids)
+        right_lane_inds.append(good_right_ids)
+
+        if len(good_left_ids) > minpix:
+            leftx_current = np.int(np.mean(nonzero_col[good_left_ids]))
+        if len(good_right_ids) > minpix:
+            rightx_current = np.int(np.mean(nonzero_col[good_right_ids]))
+
+    # concatenate the arrays
+    left_lane_inds = np.concatenate(left_lane_inds)
+    right_lane_inds = np.concatenate(right_lane_inds)
+
+    leftx = nonzero_col[left_lane_inds]
+    lefty = nonzero_row[left_lane_inds]
+    rightx = nonzero_col[right_lane_inds]
+    righty = nonzero_row[right_lane_inds]
+
+    # Fit the line according to y
+    left_fit = np.polyfit(lefty, leftx, 2)
+    right_fit = np.polyfit(righty, rightx, 2)
+
+    ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0])
+    left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+    right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+    return ploty, left_fitx, right_fitx, left_fit, right_fit
+
+def acc_frame_to_frame(binary_warped, left_fit, right_fit, margin = 100):
+    '''
+    :param binary_warped: from perspective transform
+    :param left_fit: from slide windows
+    :param right_fit:
+    :param margin:
+    :return: left, right and y position to draw
+    '''
+    nonzero = binary_warped.nonzero()
+    nonzero_row = nonzero[0]
+    nonzero_col = nonzero[1]
+
+    left_lane_inds = (
+    (nonzero_col > (left_fit[0] * nonzero_row ** 2 + left_fit[1] * nonzero_row + left_fit[2] - margin)) & \
+    (nonzero_col < (left_fit[0] * nonzero_row ** 2 + left_fit[1] * nonzero_row + left_fit[2] + margin)))
+    right_lane_inds = (
+    (nonzero_col > (right_fit[0] * nonzero_row ** 2 + right_fit[1] * nonzero_row + right_fit[2] - margin)) & \
+    (nonzero_col < (right_fit[0] * nonzero_row ** 2 + right_fit[1] * nonzero_row + right_fit[2] + margin)))
+
+    leftx = nonzero_col[left_lane_inds]
+    lefty = nonzero_row[left_lane_inds]
+    rightx = nonzero_col[right_lane_inds]
+    righty = nonzero_row[right_lane_inds]
+
+    left_fit = np.polyfit(lefty, leftx, 2)
+    right_fit = np.polyfit(righty, rightx, 2)
+
+    ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
+    left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
+    right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
+    return ploty, left_fitx, right_fitx
+
+def img_region(warped, left_fitx, right_fitx, ploty, Minv, undist):
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
+
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp = cv2.warpPerspective(color_warp, Minv, (warped.shape[1], warped.shape[0]))
+    # Combine the result with the original image
+    result = cv2.addWeighted(undist, 1, newwarp, 0.3, 0)
+    return result
+
+def pipline(img, objpoints,imgpoints):
+    undist = undistort_img(img, objpoints, imgpoints)
+    binary_img = binary_color(undist, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(110,255))
+    binary_warped, Minv = warp_M(binary_img)
+    ploty, left_fitx, right_fitx, left_fit, right_fit = slide_windows(binary_warped, nwindows=9, margin=100, minpix=50)
+    ploty, left_fitx, right_fitx = acc_frame_to_frame(binary_warped, left_fit, right_fit, margin = 100)
+    result = img_region(binary_warped, left_fitx, right_fitx, ploty, Minv, undist)
+    return result
 
 ## For camara distorted test
 # s = time.time()
@@ -171,86 +318,169 @@ def warp(img):
 # plt.imsave('img_perspective_transform.jpg',img_perspective_transform, cmap=plt.cm.gray)
 
 
-## For the slide windows
-binary_warped = Image.imread('output_images/img_perspective_transform.jpg')[:, :, 0] # shape(720, 1280, 4) -> (720, 1280)
-histogram = np.sum(binary_warped[binary_warped.shape[0]//2:, :], axis=0) # cut the sky
-
-out_img = np.dstack([binary_warped, binary_warped, binary_warped])*255
-
-midpoint = np.int(histogram.shape[0]/2)
-leftx_base = np.argmax(histogram[:midpoint])
-rightx_base = np.argmax(histogram[midpoint:])+midpoint
-
-nwindows = 9
-
-window_height = np.int(binary_warped.shape[0]/nwindows)
-
-nonzero = binary_warped.nonzero()
-nonzero_row = nonzero[0]
-nonzero_col = nonzero[1]
-
-leftx_current = leftx_base
-rightx_current = rightx_base
-
-margin = 100
-
-minpix = 50
-
-left_lane_inds = []
-right_lane_inds = []
-
-for window in range(nwindows):
-    win_y_low = binary_warped.shape[0] - (window+1) * window_height
-    win_y_high = binary_warped.shape[0] - window*window_height
-
-    win_xleft_left = leftx_current - margin
-    win_xleft_right = leftx_current + margin
-
-    win_xright_left = rightx_current - margin
-    win_xright_right = rightx_current + margin
-
-    cv2.rectangle(out_img, (win_xleft_left, win_y_low), (win_xleft_right,win_y_high), (0,0,255), 2)
-    cv2.rectangle(out_img, (win_xright_left, win_y_low), (win_xright_right, win_y_high), (0,0,255),2)
-
-    good_left_ids = ((nonzero_row >= win_y_low)&(nonzero_row <= win_y_high) &\
-                     (nonzero_col>=win_xleft_left) & (nonzero_col<=win_xleft_right)).nonzero()[0]
-
-    good_right_ids = ((nonzero_row>=win_y_low)&(nonzero_row>=win_y_high) &\
-                      (nonzero_col>=win_xright_left) & (nonzero_col<=win_xright_right)).nonzero()[0]
-
-    left_lane_inds.append(good_left_ids)
-    right_lane_inds.append(good_right_ids)
-
-    if len(good_left_ids) > minpix:
-        leftx_current = np.int(np.mean(nonzero_col[good_left_ids]))
-    if len(good_right_ids) > minpix:
-        rightx_current = np.int(np.mean(nonzero_col[good_right_ids]))
-
-# concatenate the arrays
-left_lane_inds = np.concatenate(left_lane_inds)
-right_lane_inds = np.concatenate(right_lane_inds)
-
-leftx = nonzero_col[left_lane_inds]
-lefty = nonzero_row[left_lane_inds]
-rightx = nonzero_col[right_lane_inds]
-righty = nonzero_row[right_lane_inds]
-
-# Fit the line according to y
-left_fit = np.polyfit(lefty, leftx, 2)
-right_fit = np.polyfit(righty, rightx, 2)
+## For the slide windows test
+# binary_warped = Image.imread('output_images/img_perspective_transform.jpg')[:, :, 0] # shape(720, 1280, 4) -> (720, 1280)
+# histogram = np.sum(binary_warped[binary_warped.shape[0]//2:, :], axis=0) # cut the sky
+#
+# out_img = np.dstack([binary_warped, binary_warped, binary_warped])*255
+#
+# midpoint = np.int(histogram.shape[0]/2)
+# leftx_base = np.argmax(histogram[:midpoint])
+# rightx_base = np.argmax(histogram[midpoint:])+midpoint
+#
+# nwindows = 9
+#
+# window_height = np.int(binary_warped.shape[0]/nwindows)
+#
+# nonzero = binary_warped.nonzero()
+# nonzero_row = nonzero[0]
+# nonzero_col = nonzero[1]
+#
+# leftx_current = leftx_base
+# rightx_current = rightx_base
+#
+# margin = 100
+#
+# minpix = 50
+#
+# left_lane_inds = []
+# right_lane_inds = []
+#
+# for window in range(nwindows):
+#     win_y_low = binary_warped.shape[0] - (window+1) * window_height
+#     win_y_high = binary_warped.shape[0] - window*window_height
+#
+#     win_xleft_left = leftx_current - margin
+#     win_xleft_right = leftx_current + margin
+#
+#     win_xright_left = rightx_current - margin
+#     win_xright_right = rightx_current + margin
+#
+#     cv2.rectangle(out_img, (win_xleft_left, win_y_low), (win_xleft_right,win_y_high), (0,0,255), 2)
+#     cv2.rectangle(out_img, (win_xright_left, win_y_low), (win_xright_right, win_y_high), (0,0,255),2)
+#
+#     good_left_ids = ((nonzero_row >= win_y_low)&(nonzero_row <= win_y_high) &\
+#                      (nonzero_col>=win_xleft_left) & (nonzero_col<=win_xleft_right)).nonzero()[0]
+#
+#     good_right_ids = ((nonzero_row>=win_y_low)&(nonzero_row>=win_y_high) &\
+#                       (nonzero_col>=win_xright_left) & (nonzero_col<=win_xright_right)).nonzero()[0]
+#
+#     left_lane_inds.append(good_left_ids)
+#     right_lane_inds.append(good_right_ids)
+#
+#     if len(good_left_ids) > minpix:
+#         leftx_current = np.int(np.mean(nonzero_col[good_left_ids]))
+#     if len(good_right_ids) > minpix:
+#         rightx_current = np.int(np.mean(nonzero_col[good_right_ids]))
+#
+# # concatenate the arrays
+# left_lane_inds = np.concatenate(left_lane_inds)
+# right_lane_inds = np.concatenate(right_lane_inds)
+#
+# leftx = nonzero_col[left_lane_inds]
+# lefty = nonzero_row[left_lane_inds]
+# rightx = nonzero_col[right_lane_inds]
+# righty = nonzero_row[right_lane_inds]
+#
+# # Fit the line according to y
+# left_fit = np.polyfit(lefty, leftx, 2)
+# right_fit = np.polyfit(righty, rightx, 2)
 
 ## Visualization
-ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0])
-left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-
-out_img[nonzero_row[left_lane_inds], nonzero_col[left_lane_inds]] = [255,0,0]
-out_img[nonzero_row[right_lane_inds], nonzero_col[right_lane_inds]] = [0,255,0]
-
-plt.imshow(out_img)
-plt.plot(left_fitx, ploty, color='yellow')
-plt.plot(right_fitx, ploty, color='yellow')
-plt.show()
-
+# ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0])
+# left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+# right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+#
+# out_img[nonzero_row[left_lane_inds], nonzero_col[left_lane_inds]] = [255,0,0]
+# out_img[nonzero_row[right_lane_inds], nonzero_col[right_lane_inds]] = [0,255,0]
+#
 # plt.imshow(out_img)
+# plt.plot(left_fitx, ploty, color='yellow')
+# plt.plot(right_fitx, ploty, color='yellow')
 # plt.show()
+
+
+## skip the slide windows when you know where the line are
+# nonzero = binary_warped.nonzero()
+# nonzero_row = nonzero[0]
+# nonzero_col = nonzero[1]
+#
+# margin = 100
+# left_lane_inds = ((nonzero_col > (left_fit[0]*nonzero_row**2 + left_fit[1]*nonzero_row + left_fit[2]-margin))&\
+#                   (nonzero_col < (left_fit[0]*nonzero_row**2 + left_fit[1]*nonzero_row + left_fit[2]+margin)))
+# right_lane_inds = ((nonzero_col > (right_fit[0]*nonzero_row**2 + right_fit[1]*nonzero_row + right_fit[2]-margin))&\
+#                    (nonzero_col < (right_fit[0]*nonzero_row**2 + right_fit[1]*nonzero_row + right_fit[2]+margin)))
+#
+# leftx = nonzero_col[left_lane_inds]
+# lefty = nonzero_row[left_lane_inds]
+# rightx = nonzero_col[right_lane_inds]
+# righty = nonzero_row[right_lane_inds]
+#
+# left_fit = np.polyfit(lefty, leftx, 2)
+# right_fit = np.polyfit(righty, rightx, 2)
+#
+# ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0] )
+# left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+# right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+# Create an image to draw on and an image to show the selection window
+# out_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
+# window_img = np.zeros_like(out_img)
+# # Color in left and right line pixels
+# out_img[nonzero_row[left_lane_inds], nonzero_col[left_lane_inds]] = [255, 0, 0]
+# out_img[nonzero_row[right_lane_inds], nonzero_col[right_lane_inds]] = [0, 0, 255]
+#
+# # Generate a polygon to illustrate the search window area
+# # And recast the x and y points into usable format for cv2.fillPoly()
+# left_line_window1 = np.array([np.transpose(np.vstack([left_fitx-margin, ploty]))])
+# left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx+margin,
+#                               ploty])))])
+# left_line_pts = np.hstack((left_line_window1, left_line_window2))
+# right_line_window1 = np.array([np.transpose(np.vstack([right_fitx-margin, ploty]))])
+# right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx+margin,
+#                               ploty])))])
+# right_line_pts = np.hstack((right_line_window1, right_line_window2))
+#
+# # Draw the lane onto the warped blank image
+# cv2.fillPoly(window_img, np.int_([left_line_pts]), (0,255, 0))
+# cv2.fillPoly(window_img, np.int_([right_line_pts]), (0,255, 0))
+# result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
+# plt.imshow(result)
+# plt.plot(left_fitx, ploty, color='yellow')
+# plt.plot(right_fitx, ploty, color='yellow')
+# plt.xlim(0, 1280)
+# plt.ylim(720, 0)
+# plt.show()
+
+## test pipline
+# objpoints, imgpoints = r_obj_img_point(chessboard_dir)
+# print(objpoints)
+# with open('obj_img_point.pkl', 'wb') as f:
+#     pickle.dump([objpoints, imgpoints], f)
+
+# with open('obj_img_point.pkl', 'rb') as f:
+#     objpoints, imgpoints = pickle.load(f)
+#
+# img = Image.imread(test_image)
+# undist = undistort_img(img, objpoints, imgpoints)
+# binary_img = binary_color(undist, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(110,255))
+# binary_warped, Minv = warp_M(binary_img)
+# ploty, left_fitx, right_fitx, left_fit, right_fit = slide_windows(binary_warped, nwindows=9, margin=100, minpix=50)
+# ploty, left_fitx, right_fitx = acc_frame_to_frame(binary_warped, left_fit, right_fit, margin = 100)
+# result = img_region(binary_warped, left_fitx, right_fitx, ploty, Minv, undist)
+#
+# plt.imshow(result)
+# plt.show()
+
+## test a list of img
+# with open(obj_img_dir, 'rb') as f:
+#     objpoints, imgpoints = pickle.load(f)
+#
+# for img_name in os.listdir('test_images/'):
+#     img = Image.imread('test_images/' +img_name)
+#     res = pipline(img, objpoints, imgpoints)
+#     plt.imshow(res)
+#     plt.show()
+
+
+

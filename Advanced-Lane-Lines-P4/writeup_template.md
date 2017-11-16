@@ -56,7 +56,7 @@ I used a combination of color and gradient thresholds to generate a binary image
 
 - In order to extract the yellow lane line, I only using `S` channel with threshold (130,200)
 
-![S_channel](output_images/figure_5.png)
+![S_channel](output_images/Figure_2.png)
 
 - And then I campute the gradient magnitude for gray image with threshold (50,200) and ksize 3
 
@@ -73,9 +73,9 @@ The code for my perspective transform includes a function called `warper()`, whi
 ```python
 src = np.float32(
     [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
+    [((img_size[0] / 6) +40), img_size[1]],
     [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
+    [(img_size[0] / 2 + 70), img_size[1] / 2 + 100]])
 dst = np.float32(
     [[(img_size[0] / 4), 0],
     [(img_size[0] / 4), img_size[1]],
@@ -104,15 +104,24 @@ After doing the wrap the binary image. It looks like they are almost parallel.:
 
 #### 4. Fit the line to calculate curvature
 
-Firstly, I cut the sky and plot histogram for perspective transform image:
+Firstly, I cut the sky and plot histogram for perspective transform image , in order to find which part from the image containing lane line with huge probability:
 
 ![histogram](output_images/histogram.png)
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
+Then I use the slide windows to search for the lane line and the procedure can be devide into servel steps:
+- Finding the midpoint for the binary image
+- use the static result from histogram to find maximun pixel
+- use slide window to calculate the mean point, in order to move forward
+- use the point what we find to fit the polynominal line
 
 ![find_line](output_images/find_line.png)
 
-The result is amazing good.
+The result is amazing good. Then I reuse the parameter I fit, so that I can easily track the line in frame to framevedio:
+
+![reuse](output_images/slide_win_curve.png)
+
+I can't wait to apply it into the real picture:
+
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
