@@ -77,7 +77,32 @@ def undistort_img(img, objpoints, imgpoints):
     dst = cv2.undistort(img, mtx, dist, None, mtx)
     return dst
 
-def binary_color(img, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(110,255)):
+
+def region_of_interest(img, vertices):
+    """
+    Applies an image mask.
+
+    Only keeps the region of the image defined by the polygon
+    formed from `vertices`. The rest of the image is set to black.
+    """
+    # defining a blank mask to start with
+    mask = np.zeros_like(img)
+
+    # defining a 3 channel or 1 channel color to fill the mask with depending on the input image
+    if len(img.shape) > 2:
+        channel_count = img.shape[2]  # i.e. 3 or 4 depending on your image
+        ignore_mask_color = (255,) * channel_count
+    else:
+        ignore_mask_color = 255
+
+    # filling pixels inside the polygon defined by "vertices" with the fill color
+    cv2.fillPoly(mask, vertices, ignore_mask_color)
+
+    # returning the image only where mask pixels are nonzero
+    masked_image = cv2.bitwise_and(img, mask)
+    return masked_image
+
+def binary_color(img, sobel_kernel=3, gray_threshold=(50,200), color_thresold=(150,200)):
     '''
     :param img: from undistort_img
     :param sobel_kernel:
@@ -85,9 +110,21 @@ def binary_color(img, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(1
     :param color_thresold:
     :return: gray image to warpped
     '''
-    def grad(one_chanel):
-        sobely = cv2.Sobel(one_chanel, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
-        sobelx = cv2.Sobel(one_chanel, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+    img_size = (img.shape[1], img.shape[0])
+    src = np.int64(
+        [[(img_size[0] / 2) - 120, img_size[1] / 2 + 100],
+         [((img_size[0] / 6) )-50, img_size[1]],
+         [(img_size[0] * 5 / 6) + 250, img_size[1]],
+         [(img_size[0] / 2 + 150), img_size[1] / 2 + 100]])
+    for i, v in enumerate(src):
+        cv2.line(img, tuple(src[i]), tuple(src[(i+1)%len(src)]), (255,255,0),10)
+    def grad(one_chanel, x = True, y = True):
+        sobely = np.zeros_like(one_chanel)
+        sobelx = np.zeros_like(one_chanel)
+        if y:
+            sobely = cv2.Sobel(one_chanel, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+        if x:
+            sobelx = cv2.Sobel(one_chanel, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
 
         # grad
         gradmag = np.sqrt(sobely**2 + sobelx**2) # cal magnitiue
@@ -108,10 +145,17 @@ def binary_color(img, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(1
     S_binary = np.zeros_like(S)
     S_binary[(S > color_thresold[0]) & (S < color_thresold[1])] = 1
 
+    # color thresold
+    # S channel
+    HLS = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+    L = HLS[:, :, 0]
+    L_binary = np.zeros_like(L)
+    L_binary[(L > color_thresold[0]) & (L < color_thresold[1])] = 1
+
 
     binary = np.zeros_like(gray)
-    binary[(gray_binary == 1) | (S_binary == 1) ] = 1
-    return binary
+    binary[(L_binary == 1) | (S_binary == 1) ] = 1
+    return img
 
 def warp_M(img):
     '''
@@ -261,13 +305,50 @@ def img_region(warped, left_fitx, right_fitx, ploty, Minv, undist):
     result = cv2.addWeighted(undist, 1, newwarp, 0.3, 0)
     return result
 
+def img_region_no_T(warped, left_fitx, right_fitx, ploty):
+    # Create an image to draw the lines on
+    original_warp = np.dstack((warped, warped, warped))*255
+
+    warp_zero = np.zeros_like(warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0, 255, 0))
+
+    result = cv2.addWeighted(original_warp, 1, color_warp, 0.5, 0)
+
+    return result
+
+def cal_curvature(ploty, left_fit_cr, right_fit_cr):
+    y_eval = np.max(ploty)
+    # Define conversions in x and y from pixels space to meters
+    ym_per_pix = 30.0 / 720  # meters per pixel in y dimension
+    xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
+
+    # Calculate the new radii of curvature
+    left_curverad = ((1 + (2 * left_fit_cr[0] * y_eval * ym_per_pix + left_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
+        2 * left_fit_cr[0])
+    right_curverad = ((1 + (2 * right_fit_cr[0] * y_eval * ym_per_pix + right_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
+        2 * right_fit_cr[0])
+    # Now our radius of curvature is in meters
+    return left_curverad, right_curverad
+
 def pipline(img, objpoints,imgpoints):
     undist = undistort_img(img, objpoints, imgpoints)
     binary_img = binary_color(undist, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(110,255))
+    binary_img_color = np.dstack([binary_img, binary_img, binary_img])*255
     binary_warped, Minv = warp_M(binary_img)
+
     ploty, left_fitx, right_fitx, left_fit, right_fit = slide_windows(binary_warped, nwindows=9, margin=100, minpix=50)
     ploty, left_fitx, right_fitx = acc_frame_to_frame(binary_warped, left_fit, right_fit, margin = 100)
-    result = img_region(binary_warped, left_fitx, right_fitx, ploty, Minv, undist)
+    print (cal_curvature(ploty, left_fit, right_fit))
+    # result = img_region(binary_warped, left_fitx, right_fitx, ploty, Minv, binary_img_color)
+    result = img_region_no_T(binary_warped, left_fitx, right_fitx, ploty)
     return result
 
 ## For camara distorted test
@@ -285,8 +366,8 @@ def pipline(img, objpoints,imgpoints):
 
 
 ## For binary image test
-# img = Image.imread(test_image)
-# img_read_show(img, binary_color(img), gray=True)
+img = Image.imread(test_image)
+img_read_show(img, binary_color(img), gray=True)
 
 ## For PerspectiveTransform test
 # img = Image.imread(test_image)
@@ -473,14 +554,15 @@ def pipline(img, objpoints,imgpoints):
 # plt.show()
 
 ## test a list of img
-# with open(obj_img_dir, 'rb') as f:
-#     objpoints, imgpoints = pickle.load(f)
-#
-# for img_name in os.listdir('test_images/'):
-#     img = Image.imread('test_images/' +img_name)
-#     res = pipline(img, objpoints, imgpoints)
-#     plt.imshow(res)
-#     plt.show()
+with open(obj_img_dir, 'rb') as f:
+    objpoints, imgpoints = pickle.load(f)
+
+for img_name in os.listdir('test_images/'):
+    img = Image.imread('test_images/' +img_name)
+    print ('test_images/' +img_name)
+    res = pipline(img, objpoints, imgpoints)
+    plt.imshow(res)
+    plt.show()
 
 
 
