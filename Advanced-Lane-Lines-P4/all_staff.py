@@ -86,7 +86,7 @@ def region_of_interest(img, vertices):
     formed from `vertices`. The rest of the image is set to black.
     """
     # defining a blank mask to start with
-    mask = np.zeros_like(img)
+    mask = np.ones_like(img)*100
 
     # defining a 3 channel or 1 channel color to fill the mask with depending on the input image
     if len(img.shape) > 2:
@@ -102,7 +102,7 @@ def region_of_interest(img, vertices):
     masked_image = cv2.bitwise_and(img, mask)
     return masked_image
 
-def binary_color(img, sobel_kernel=3, gray_threshold=(50,200), color_thresold=(150,200)):
+def binary_color(img, sobel_kernel=7, gray_threshold=(50,200), color_thresold=(150,200)):
     '''
     :param img: from undistort_img
     :param sobel_kernel:
@@ -110,14 +110,7 @@ def binary_color(img, sobel_kernel=3, gray_threshold=(50,200), color_thresold=(1
     :param color_thresold:
     :return: gray image to warpped
     '''
-    img_size = (img.shape[1], img.shape[0])
-    src = np.int64(
-        [[(img_size[0] / 2) - 120, img_size[1] / 2 + 100],
-         [((img_size[0] / 6) )-50, img_size[1]],
-         [(img_size[0] * 5 / 6) + 250, img_size[1]],
-         [(img_size[0] / 2 + 150), img_size[1] / 2 + 100]])
-    for i, v in enumerate(src):
-        cv2.line(img, tuple(src[i]), tuple(src[(i+1)%len(src)]), (255,255,0),10)
+
     def grad(one_chanel, x = True, y = True):
         sobely = np.zeros_like(one_chanel)
         sobelx = np.zeros_like(one_chanel)
@@ -136,7 +129,7 @@ def binary_color(img, sobel_kernel=3, gray_threshold=(50,200), color_thresold=(1
 
     # gray
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    gray_binary = grad(gray)
+    gray_binary = grad(grad(gray))
 
     # color thresold
     # S channel
@@ -144,18 +137,26 @@ def binary_color(img, sobel_kernel=3, gray_threshold=(50,200), color_thresold=(1
     S = HLS[:, :, 2]
     S_binary = np.zeros_like(S)
     S_binary[(S > color_thresold[0]) & (S < color_thresold[1])] = 1
-
-    # color thresold
-    # S channel
-    HLS = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
-    L = HLS[:, :, 0]
-    L_binary = np.zeros_like(L)
-    L_binary[(L > color_thresold[0]) & (L < color_thresold[1])] = 1
+    S_binary = grad(S_binary, y=False)
 
 
     binary = np.zeros_like(gray)
-    binary[(L_binary == 1) | (S_binary == 1) ] = 1
-    return img
+    binary[(gray_binary == 1) | (S_binary == 1) ] = 1
+    return binary
+
+def mask_grad(img):
+    img_size = (img.shape[1], img.shape[0])
+    src = np.int64(
+        [[[(img_size[0] / 2) - 70, img_size[1] / 2 + 100],
+          [((img_size[0] / 6) -100), img_size[1]],
+          [(img_size[0] * 5 / 6) + 250, img_size[1]],
+          [(img_size[0] / 2 + 150), img_size[1] / 2 + 100]]])
+
+    mask_img = region_of_interest(img, src)
+
+    # plt.imshow(mask_img, cmap='gray')
+    # plt.show()
+    return mask_img
 
 def warp_M(img):
     '''
@@ -168,6 +169,7 @@ def warp_M(img):
          [((img_size[0] / 6) +40), img_size[1]],
          [(img_size[0] * 5 / 6) + 60, img_size[1]],
          [(img_size[0] / 2 + 70), img_size[1] / 2 + 100]])
+    # print (src/2)
     dst = np.float32(
         [[(img_size[0] / 4), 0],
          [(img_size[0] / 4), img_size[1]],
@@ -176,6 +178,8 @@ def warp_M(img):
     # print(img.shape)
     # print(src)
     # print(dst)
+
+
 
     Minv = cv2.getPerspectiveTransform(dst, src)
 
@@ -284,7 +288,8 @@ def acc_frame_to_frame(binary_warped, left_fit, right_fit, margin = 100):
     ploty = np.linspace(0, binary_warped.shape[0] - 1, binary_warped.shape[0])
     left_fitx = left_fit[0] * ploty ** 2 + left_fit[1] * ploty + left_fit[2]
     right_fitx = right_fit[0] * ploty ** 2 + right_fit[1] * ploty + right_fit[2]
-    return ploty, left_fitx, right_fitx
+    return ploty, left_fitx, right_fitx, left_fit, right_fit
+
 
 def img_region(warped, left_fitx, right_fitx, ploty, Minv, undist):
     # Create an image to draw the lines on
@@ -338,18 +343,44 @@ def cal_curvature(ploty, left_fit_cr, right_fit_cr):
     # Now our radius of curvature is in meters
     return left_curverad, right_curverad
 
+def dstack_img(img, r=False, g=False, b=False):
+    if r:
+        return np.dstack([img*255, img, img])
+    elif g:
+        return np.dstack([img, img* 255, img])
+    elif b:
+        return np.dstack([img, img, img*255])
+    else:
+        return np.dstack([img, img, img])*255
+
 def pipline(img, objpoints,imgpoints):
     undist = undistort_img(img, objpoints, imgpoints)
     binary_img = binary_color(undist, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(110,255))
-    binary_img_color = np.dstack([binary_img, binary_img, binary_img])*255
-    binary_warped, Minv = warp_M(binary_img)
+    # binary_img_color = np.dstack([binary_img, binary_img, binary_img])*255
+    mask_img = mask_grad(binary_img)
+    binary_warped, Minv = warp_M(mask_img)
 
     ploty, left_fitx, right_fitx, left_fit, right_fit = slide_windows(binary_warped, nwindows=9, margin=100, minpix=50)
-    ploty, left_fitx, right_fitx = acc_frame_to_frame(binary_warped, left_fit, right_fit, margin = 100)
-    print (cal_curvature(ploty, left_fit, right_fit))
-    # result = img_region(binary_warped, left_fitx, right_fitx, ploty, Minv, binary_img_color)
-    result = img_region_no_T(binary_warped, left_fitx, right_fitx, ploty)
-    return result
+    ploty, left_fitx, right_fitx, left_fit, right_fit = acc_frame_to_frame(binary_warped, left_fit, right_fit, margin = 100)
+    # print (left_fitx)
+    result = img_region(binary_warped, left_fitx, right_fitx, ploty, Minv, undist)
+    result_warp = img_region_no_T(binary_warped, left_fitx, right_fitx, ploty)
+    # put text
+    curvature = cal_curvature(ploty, left_fit, right_fit)
+    c_s = str(curvature[0]) + "m" + "  "+str(curvature[1]) + "m"
+
+    # concat many image
+    result = cv2.resize(result, (640, 320))
+    binary_img = dstack_img(cv2.resize(binary_img, (640, 320)), b=True)
+    mask_img = dstack_img(cv2.resize(mask_img, (640, 320)), r=True)
+    result_warp = cv2.resize(result_warp, (640, 320))
+
+    temp1 = np.concatenate([result, result_warp], axis=0)
+    temp2 = np.concatenate([binary_img, mask_img], axis=0)
+    temp = np.concatenate([temp1, temp2], axis=1)
+
+    cv2.putText(temp, c_s, (22,22), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0),3)
+    return temp
 
 ## For camara distorted test
 # s = time.time()
@@ -366,8 +397,8 @@ def pipline(img, objpoints,imgpoints):
 
 
 ## For binary image test
-img = Image.imread(test_image)
-img_read_show(img, binary_color(img), gray=True)
+# img = Image.imread(test_image)
+# img_read_show(img, binary_color(img), gray=True)
 
 ## For PerspectiveTransform test
 # img = Image.imread(test_image)
@@ -554,15 +585,15 @@ img_read_show(img, binary_color(img), gray=True)
 # plt.show()
 
 ## test a list of img
-with open(obj_img_dir, 'rb') as f:
-    objpoints, imgpoints = pickle.load(f)
-
-for img_name in os.listdir('test_images/'):
-    img = Image.imread('test_images/' +img_name)
-    print ('test_images/' +img_name)
-    res = pipline(img, objpoints, imgpoints)
-    plt.imshow(res)
-    plt.show()
+# with open(obj_img_dir, 'rb') as f:
+#     objpoints, imgpoints = pickle.load(f)
+#
+# for img_name in os.listdir('test_images/'):
+#     img = Image.imread('test_images/' +img_name)
+#     print ('test_images/' +img_name)
+#     res = pipline(img, objpoints, imgpoints)
+#     plt.imshow(res)
+#     plt.show()
 
 
 

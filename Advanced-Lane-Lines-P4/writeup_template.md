@@ -125,13 +125,36 @@ I can't wait to apply it into the real picture:
 
 #### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-I did this in lines # through # in my code in `my_other_file.py`
+The function `cal_curvature` in `all_staff.py`line 332 describes how to use it. It looks likes this:
+```python
+cal_curvature(ploty, left_fit_cr, right_fit_cr)
+```
+Firstly, I accept the parameter which is fitted from perspective transform image. And then I do some Partial derivative according to Radius of Curvature [formula](https://www.intmath.com/applications-differentiation/8-radius-curvature.php):
+$$$
+
+f(y)=Ay^2 +By+C
+$$$
+$$$
+f′(y)=\frac{dx}{dy}=2Ay+B
+$$$
+
+$$$
+f′′(y)=\frac{d^2x}{dy^2}=2A
+$$$
+
+$$$
+R_{curve} = \frac{(1 + (2Ay + B)^2)^{(\frac{3}{2})}}{|2A|}
+$$$
+
+### Help!! I can not know how to calculate the vehicle with respect to center
+
+
 
 #### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
 I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
 
-![alt text][image6]
+![p](output_images/result.png)
 
 ---
 
@@ -139,7 +162,7 @@ I implemented this step in lines # through # in my code in `yet_another_file.py`
 
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-Here's a [link to my video result](./project_video.mp4)
+Here's a [link to my video result](res_video/project_video_res.mp4)
 
 ---
 
@@ -147,4 +170,7 @@ Here's a [link to my video result](./project_video.mp4)
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+- Bright to dark is so strange and unstable. I hope that reviewer can give some advice
+- I can not know how to calculate the vehicle with respect to center. I hope that reviewer can give some advice
+-  My curvature somethimes can get very large. Is this strange?
+-  Dotted line make the region unstable. How can I do smoothing?
