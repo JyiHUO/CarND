@@ -102,7 +102,82 @@ def region_of_interest(img, vertices):
     masked_image = cv2.bitwise_and(img, mask)
     return masked_image
 
-def binary_color(img, sobel_kernel=7, gray_threshold=(50,200), color_thresold=(150,200)):
+
+# def binary_color(img, sobel_kernel=3, gray_threshold=(50,200), color_thresold=(150,200)):
+#     '''
+#     :param img: from undistort_img
+#     :param sobel_kernel:
+#     :param gray_threshold:
+#     :param color_thresold:
+#     :return: gray image to warpped
+#     '''
+#
+#     def grad(one_chanel, x = True, y = True):
+#         sobely = np.zeros_like(one_chanel)
+#         sobelx = np.zeros_like(one_chanel)
+#         if y:
+#             sobely = cv2.Sobel(one_chanel, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+#         if x:
+#             sobelx = cv2.Sobel(one_chanel, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+#
+#         # grad
+#         gradmag = np.sqrt(sobely**2 + sobelx**2) # cal magnitiue
+#         gradmag = (gradmag/np.max(gradmag)*255).astype(np.uint8) # convert to uint8
+#
+#         binary_output = np.zeros_like(gradmag)
+#         binary_output[(gradmag > gray_threshold[0]) & (gradmag < gray_threshold[1])] = 1
+#         return binary_output
+#
+#     # gray
+#     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+#     gray_binary = grad(grad(gray))
+#
+#     # color thresold
+#     # S channel
+#     HLS = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+#     S = HLS[:, :, 2]
+#     S_binary = np.zeros_like(S)
+#     S_binary[(S > color_thresold[0]) & (S < color_thresold[1])] = 1
+#     S_binary = grad(S_binary, y=False)
+#
+#
+#     binary = np.zeros_like(gray)
+#     binary[(gray_binary == 1) | (S_binary == 1) ] = 1
+#     return binary
+
+def dir_threshold(gray, sobel_kernel=3, thresh=(0, np.pi/2)):
+    # Take the gradient in x and y separately
+    sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+    sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+    # 3) Take the absolute value of the x and y gradients
+    abs_sobel_x = np.absolute(sobel_x)
+    abs_sobel_y = np.absolute(sobel_y)
+    # 4) Use np.arctan2(abs_sobely, abs_sobelx) to calculate the direction of the gradient
+    direction = np.arctan2(abs_sobel_y,abs_sobel_x)
+    direction = np.absolute(direction)
+    # 5) Create a binary mask where direction thresholds are met
+    mask = np.zeros_like(direction)
+    mask[(direction >= thresh[0]) & (direction <= thresh[1])] = 1
+    # 6) Return this mask as your binary_output image
+    return mask
+
+def grad(one_chanel,sobel_kernel=3, x = True, y = True, thresold=(0,255)):
+    sobely = np.zeros_like(one_chanel)
+    sobelx = np.zeros_like(one_chanel)
+    if y:
+        sobely = cv2.Sobel(one_chanel, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+    if x:
+        sobelx = cv2.Sobel(one_chanel, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
+
+    # grad
+    gradmag = np.sqrt(sobely**2 + sobelx**2) # cal magnitiue
+    gradmag = (gradmag/np.max(gradmag)*255).astype(np.uint8) # convert to uint8
+
+    binary_output = np.zeros_like(gradmag)
+    binary_output[(gradmag > thresold[0]) & (gradmag < thresold[1])] = 1
+    return binary_output
+
+def binary_color(img, sobel_kernel=3, gray_threshold=(50,200), S_thresold=(100,255), L_threshold=(215,256)):
     '''
     :param img: from undistort_img
     :param sobel_kernel:
@@ -111,38 +186,59 @@ def binary_color(img, sobel_kernel=7, gray_threshold=(50,200), color_thresold=(1
     :return: gray image to warpped
     '''
 
-    def grad(one_chanel, x = True, y = True):
-        sobely = np.zeros_like(one_chanel)
-        sobelx = np.zeros_like(one_chanel)
-        if y:
-            sobely = cv2.Sobel(one_chanel, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
-        if x:
-            sobelx = cv2.Sobel(one_chanel, cv2.CV_64F, 1, 0, ksize=sobel_kernel)
 
-        # grad
-        gradmag = np.sqrt(sobely**2 + sobelx**2) # cal magnitiue
-        gradmag = (gradmag/np.max(gradmag)*255).astype(np.uint8) # convert to uint8
+    ## grad threshold
 
-        binary_output = np.zeros_like(gradmag)
-        binary_output[(gradmag > gray_threshold[0]) & (gradmag < gray_threshold[1])] = 1
-        return binary_output
-
-    # gray
+    # direction grad
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    gray_binary = grad(grad(gray))
+    gray_direction = dir_threshold(gray, thresh=(np.pi/6, np.pi/2))
 
-    # color thresold
+    # sobelx
+    sobelx = grad(gray, sobel_kernel=3, y=False, thresold=(20,200))
+
+    ## color thresold
     # S channel
     HLS = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
     S = HLS[:, :, 2]
     S_binary = np.zeros_like(S)
-    S_binary[(S > color_thresold[0]) & (S < color_thresold[1])] = 1
-    S_binary = grad(S_binary, y=False)
+    S_binary[(S > S_thresold[0]) & (S < S_thresold[1])] = 1
 
+    # grad S_binary
+    S_grad = grad(S_binary, y=False)
 
-    binary = np.zeros_like(gray)
-    binary[(gray_binary == 1) | (S_binary == 1) ] = 1
+    # R channel
+    LAB = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
+    L = LAB[:, :, 0]
+    L_binary = np.zeros_like(L)
+    L_binary[(L > L_threshold[0]) & (L < L_threshold[1])] = 1
+
+    binary = np.zeros_like(S_binary)
+    # binary[(L_binary == 1) | (S_binary == 1) ] = 1
+
+    # dstack them and smoothing
+    # print (np.dstack([sobelx, S_binary, S_grad, L_binary]).shape)
+    binary_m = np.mean(np.dstack([ S_binary, L_binary*2]),axis=2)
+    binary = grad(binary_m, y=False)
     return binary
+
+def mask_S_channel(img):
+    src1 = np.int64(
+        [[[510,480],
+          [180,710],
+          [370,710],
+          [690,480]]]
+    )
+    src2 = np.int64(
+        [[[610,480],
+          [1060,710],
+          [1200,710],
+          [790,480]]]
+    )
+    mask1 = region_of_interest(img, src1)
+    mask2 = region_of_interest(img, src2)
+    mask = np.zeros_like(mask1)
+    mask[(mask1==1) | (mask2==1)] = 1
+    return mask
 
 def mask_grad(img):
     img_size = (img.shape[1], img.shape[0])
@@ -164,22 +260,28 @@ def warp_M(img):
     :return: binary warped
     '''
     img_size = (img.shape[1], img.shape[0])
-    src = np.float32(
-        [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-         [((img_size[0] / 6) +40), img_size[1]],
-         [(img_size[0] * 5 / 6) + 60, img_size[1]],
-         [(img_size[0] / 2 + 70), img_size[1] / 2 + 100]])
-    # print (src/2)
-    dst = np.float32(
-        [[(img_size[0] / 4), 0],
-         [(img_size[0] / 4), img_size[1]],
-         [(img_size[0] * 3 / 4), img_size[1]],
-         [(img_size[0] * 3 / 4), 0]])
-    # print(img.shape)
-    # print(src)
-    # print(dst)
+    # src = np.float32(
+    #     [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
+    #      [((img_size[0] / 6) +40), img_size[1]],
+    #      [(img_size[0] * 5 / 6) + 60, img_size[1]],
+    #      [(img_size[0] / 2 + 70), img_size[1] / 2 + 100]])
+    # dst = np.float32(
+    #     [[(img_size[0] / 4), 0],
+    #      [(img_size[0] / 4), img_size[1]],
+    #      [(img_size[0] * 3 / 4), img_size[1]],
+    #      [(img_size[0] * 3 / 4), 0]])
 
+    bottom_left = [220, 720]
+    bottom_right = [1110, 720]
+    top_left = [570, 470]
+    top_right = [722, 470]
+    src = np.float32([[top_left,bottom_left,bottom_right,top_right]])
 
+    bottom_left = [320, 720]
+    bottom_right = [920, 720]
+    top_left = [320, 1]
+    top_right = [920, 1]
+    dst = np.float32([[top_left,bottom_left,bottom_right,top_right]])
 
     Minv = cv2.getPerspectiveTransform(dst, src)
 
@@ -188,7 +290,7 @@ def warp_M(img):
     return wrapper, Minv
 
 
-def slide_windows(binary_warped, nwindows=9, margin=100, minpix=50):
+def slide_windows(binary_warped, nwindows=9, margin=100, minpix=5):
     '''
     :param binary_warped: from perspective transform
     :param nwindows: num of slide wins
@@ -329,11 +431,15 @@ def img_region_no_T(warped, left_fitx, right_fitx, ploty):
 
     return result
 
-def cal_curvature(ploty, left_fit_cr, right_fit_cr):
+def cal_curvature(ploty, left_fitx, right_fitx):
     y_eval = np.max(ploty)
     # Define conversions in x and y from pixels space to meters
     ym_per_pix = 30.0 / 720  # meters per pixel in y dimension
     xm_per_pix = 3.7 / 700  # meters per pixel in x dimension
+
+    # fit new polynomials
+    left_fit_cr = np.polyfit(ploty*ym_per_pix, left_fitx*xm_per_pix, 2)
+    right_fit_cr = np.polyfit(ploty*ym_per_pix, right_fitx*xm_per_pix, 2)
 
     # Calculate the new radii of curvature
     left_curverad = ((1 + (2 * left_fit_cr[0] * y_eval * ym_per_pix + left_fit_cr[1]) ** 2) ** 1.5) / np.absolute(
@@ -342,6 +448,11 @@ def cal_curvature(ploty, left_fit_cr, right_fit_cr):
         2 * right_fit_cr[0])
     # Now our radius of curvature is in meters
     return left_curverad, right_curverad
+
+def cal_center_offset(left_fitx, right_fitx):
+    xm_per_pix = 3.7 / 700
+    center = (left_fitx[719] + right_fitx[719])/2
+    return abs(640 - center)*xm_per_pix
 
 def dstack_img(img, r=False, g=False, b=False):
     if r:
@@ -355,19 +466,22 @@ def dstack_img(img, r=False, g=False, b=False):
 
 def pipline(img, objpoints,imgpoints):
     undist = undistort_img(img, objpoints, imgpoints)
-    binary_img = binary_color(undist, sobel_kernel=3, gray_threshold=(45,255), color_thresold=(110,255))
+    binary_img = binary_color(undist)
     # binary_img_color = np.dstack([binary_img, binary_img, binary_img])*255
     mask_img = mask_grad(binary_img)
     binary_warped, Minv = warp_M(mask_img)
 
-    ploty, left_fitx, right_fitx, left_fit, right_fit = slide_windows(binary_warped, nwindows=9, margin=100, minpix=50)
-    ploty, left_fitx, right_fitx, left_fit, right_fit = acc_frame_to_frame(binary_warped, left_fit, right_fit, margin = 100)
+    ploty, left_fitx, right_fitx, left_fit, right_fit = slide_windows(binary_warped, nwindows=9, margin=50, minpix=5)
+    ploty, left_fitx, right_fitx, left_fit, right_fit = acc_frame_to_frame(binary_warped, left_fit, right_fit, margin = 50)
     # print (left_fitx)
     result = img_region(binary_warped, left_fitx, right_fitx, ploty, Minv, undist)
     result_warp = img_region_no_T(binary_warped, left_fitx, right_fitx, ploty)
+
     # put text
-    curvature = cal_curvature(ploty, left_fit, right_fit)
-    c_s = str(curvature[0]) + "m" + "  "+str(curvature[1]) + "m"
+    curvature = cal_curvature(ploty, left_fitx, right_fitx)
+    center_offset = cal_center_offset(left_fitx, right_fitx)
+    c_s = "Curvature: left:{:.2f}km  right:{:.2f}km".format(curvature[0]/1000, curvature[1]/1000)
+    c_o = "Center offset: {:.2f}m".format(center_offset)
 
     # concat many image
     result = cv2.resize(result, (640, 320))
@@ -380,6 +494,7 @@ def pipline(img, objpoints,imgpoints):
     temp = np.concatenate([temp1, temp2], axis=1)
 
     cv2.putText(temp, c_s, (22,22), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0),3)
+    cv2.putText(temp, c_o, (22,60), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,0,0), 3)
     return temp
 
 ## For camara distorted test
@@ -397,8 +512,8 @@ def pipline(img, objpoints,imgpoints):
 
 
 ## For binary image test
-# img = Image.imread(test_image)
-# img_read_show(img, binary_color(img), gray=True)
+img = Image.imread(test_image)
+img_read_show(img, binary_color(img), gray=True)
 
 ## For PerspectiveTransform test
 # img = Image.imread(test_image)
@@ -585,15 +700,20 @@ def pipline(img, objpoints,imgpoints):
 # plt.show()
 
 ## test a list of img
-# with open(obj_img_dir, 'rb') as f:
-#     objpoints, imgpoints = pickle.load(f)
-#
-# for img_name in os.listdir('test_images/'):
-#     img = Image.imread('test_images/' +img_name)
-#     print ('test_images/' +img_name)
-#     res = pipline(img, objpoints, imgpoints)
-#     plt.imshow(res)
-#     plt.show()
+with open(obj_img_dir, 'rb') as f:
+    objpoints, imgpoints = pickle.load(f)
+
+# img  = Image.imread('test_images/'+'straight_lines1.jpg')
+# res = pipline(img, objpoints, imgpoints)
+# plt.imshow(res)
+# plt.show()
+
+for img_name in os.listdir('test_images/'):
+    img = Image.imread('test_images/' +img_name)
+    print ('test_images/' +img_name)
+    res = pipline(img, objpoints, imgpoints)
+    plt.imshow(res)
+    plt.show()
 
 
 
