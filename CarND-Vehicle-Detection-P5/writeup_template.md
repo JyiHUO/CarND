@@ -26,22 +26,32 @@
 
 #### 1. Explain how (and identify where in your code) you extracted HOG features from the training images.
 
-The code for this step is contained in the first code cell of the IPython notebook (or in lines # through # of the file called `some_file.py`).  
 
-I started by reading in all the `vehicle` and `non-vehicle` images.  Here is an example of one of each of the `vehicle` and `non-vehicle` classes:
 
 ![alt text][image1]
 
-I then explored different color spaces and different `skimage.hog()` parameters (`orientations`, `pixels_per_cell`, and `cells_per_block`).  I grabbed random images from each of the two classes and displayed them to get a feel for what the `skimage.hog()` output looks like.
+HOG parameters of `orientations=8`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)` with different color space:
 
-Here is an example using the `YCrCb` color space and HOG parameters of `orientations=8`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
+![rgb](output_images/RGB.png)
+![rgb](output_images/HLS.png)
+![rgb](output_images/LUV.png)
+![rgb](output_images/HSV.png)
+![rgb](output_images/YCR.png)
 
+During tuning the parameter, I discovery that `pixels_per_cell` can influence the final result greatly. Not only in the number of feature, but also the training time for the classifier. However it seems like it can achieve more accuracy:
 
-![alt text][image2]
+![smalle](output_images/small.png)
+
 
 #### 2. Explain how you settled on your final choice of HOG parameters.
 
-I tried various combinations of parameters and...
+After trading off between training time and abundant feature. I got my final result:
+```python
+color_space = "YUV"
+orientations=9
+pix_per_cell=8
+cell_per_block=2
+```
 
 #### 3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
 
