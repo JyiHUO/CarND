@@ -1,4 +1,4 @@
-#**Behavioral Cloning** 
+# **Behavioral Cloning** 
 
 ### Overview
 
@@ -29,7 +29,7 @@ pip3 install http://download.pytorch.org/whl/cu80/torch-0.2.0.post3-cp35-cp35m-m
 pip3 install torchvision
 ```
 
-###File expansion
+### File expansion
 
 
 My project includes the following files:
@@ -61,9 +61,7 @@ It looks almost the same. However, the unbalance label may crash the model.
 ---
 
 
-###Model Architecture and Training Strategy
-
-####1. Resnet
+#### 1. Resnet
 
 Resnet is a famous architecture which is used in many field and achieve a huge success. Because
 It can be very deep so it can accept a huge number of images without underfitting and at the same time, it will not be overfitting in training data because of `batch normalization` and `dropout layer`. And also it can avoid vanish gradient because of the `residual block`
@@ -71,17 +69,17 @@ It can be very deep so it can accept a huge number of images without underfittin
 
 
 
-####2. Parameter
+#### 2. Parameter
 Several parameter setting：
 `epoch = 30`, `batch_size=256`，`lr=0.0001`.
 
 Because of the input size for resnet is `224`. So I resize my images into the size of `224`.
 
-####3. Appropriate training data
+#### 3. Appropriate training data
 The number of the training data is about `36000`. And all of them are collected from track two.
 I run 3 laps with clockwise and other 3 laps with Counter-Clockwise. And the car always runs in the middle.
 
-####4.  Trick & Experience
+#### 4.  Trick & Experience
 
 - No data augmentation. I tried randomCrop, rotation, randomFlip, Zoom. It showed that it was useless.
 - Don't crop the sky. It showed that the sky can help the car remember how to drive in some specific place.
@@ -89,10 +87,10 @@ I run 3 laps with clockwise and other 3 laps with Counter-Clockwise. And the car
 - Using all of the camera can achieve success.
 - Get more data in specific place when the car suck in that place.
 
-####5. Something I got confused
+#### 5. Something I got confused
 More epoch, less training loss. However, the validation loss is all the same. I am so confused. So I only make the decision base on whether the car the pass the track two or not. Maybe something wrong with my splitting.
 
-####6. Track two video
+#### 6. Track two video
 Finally, the car can run at the **speed of 30** and passed through all the lap without crashing everything. This is the [youtube](https://youtu.be/ejDKt5MI-fE) link. And you can get the video in this :
 
-![](video.mp4)
+![video_file](video.mp4)
