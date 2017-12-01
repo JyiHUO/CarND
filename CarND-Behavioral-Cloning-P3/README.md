@@ -1,5 +1,7 @@
 # **Behavioral Cloning** 
 
+**Giving corrct data to resnet, it can achieve state-of-art result without any tricks**
+
 ### Overview
 
 The goals / steps of this project are the following:
@@ -79,7 +81,9 @@ Because of the input size for resnet is `224`. So I resize my images into the si
 The number of the training data is about `36000`. And all of them are collected from track two.
 I run 3 laps with clockwise and other 3 laps with Counter-Clockwise. And the car always runs in the middle.
 
-#### 4.  Trick & Experience
+And I apply the same strategy to **track one**(take six round, three are clockwise and other are counter-clockwise)
+
+#### 4.Experience
 
 - No data augmentation. I tried randomCrop, rotation, randomFlip, Zoom. It showed that it was useless.
 - Don't crop the sky. It showed that the sky can help the car remember how to drive in some specific place.
@@ -90,7 +94,11 @@ I run 3 laps with clockwise and other 3 laps with Counter-Clockwise. And the car
 #### 5. Something I got confused
 More epoch, less training loss. However, the validation loss is all the same. I am so confused. So I only make the decision base on whether the car the pass the track two or not. Maybe something wrong with my splitting.
 
-#### 6. Track two video
-Finally, the car can run at the **speed of 30** and passed through all the lap without crashing everything. This is the [youtube](https://youtu.be/ejDKt5MI-fE) link. And you can get the video in this :
+#### 6. video
+I use resnet model in track one dataset and it performs pretty well at **speed of 30**. And this is the track one [youtube](https://youtu.be/mu6PQ9NEhlw) link.Also you can download the video in 
 
-![video_file](video.mp4)
+![track one](video_track1.mp4)
+
+The car can run at **speed of 30** and passed through all the lap without crashing everything. This is the [youtube](https://youtu.be/ejDKt5MI-fE) link. And you can get the video in this :
+
+![video_file](video_track2.mp4)
